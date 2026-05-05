@@ -1,0 +1,58 @@
+YuruCamp – Off Grid Command Center
+Overview:
+* A Docker compose stack consisting of multiple services
+* Provide a bridge between Meshcore and satellite internet. 
+* Allow for our team to get information from services like RallySafe, weather providers, etc.
+
+Hardware:
+* Raspberry Pi 4 Model B.
+* Heltec V4
+o Flashed as a meshcore room server
+o Connected to the raspberry pi via USB
+Services:
+* MeshGateway
+o Provides translation between MeshCore network and the docker stack
+o Connected to room server via usb
+o Communicates with connected device using serial
+o Reads messages from the room server and publishes them onto a MQTT topic /yurucamp/inbound
+* Ensures to handle any ACKs needed
+o Sends messages from MQTT topic /yurucamp/outbound to the room server
+* Picks one message at a time
+* Break down the message into appropriate sized messages for meshcore.
+* Break only on spaces
+* Send each broken down message with appropriate spacing in between
+* CampRouter
+o Routes incoming messages to their appropriate destination
+o Reads from /yurucamp/inbound
+o Detects commands prefixed with ! and pushes to the corresponding topic
+* Example: !weather routes to /yurucamp/weather
+o Additionally watches for outgoing messages and publishes them back to CampTerminal intake /yurucamp/terminal
+o Additional intake /yurucamp/outbound/terminal to listen for messages sent from CampTerminal and route them to any command intakes as needed. 
+* CampTerminal
+o Web UI for interfacing with MeshCore chat
+o No auth, when a device connects for the first time (check by mac) prompt them for a name (max 10 characters)
+* All messages sent will be prefixed by name 
+o Websocket connection between client browser and CampTerminal
+o Incoming messages come on /yurucamp/terminal, get pushed to browser clients via websocket
+o Outgoing messages go to /yurucamp/outbound but additionally loops back to /yurucamp/terminal
+* CampRally
+o Integration with RallySafe
+o For this event use eventID 4491, all examples use a previous event
+o Pull list of stages with: https://rc.statusas.com/itinerary/stages?eventId=4456
+* Sample Output in STAGELIST.json
+o Pull current status of the stage with: https://rc.statusas.com/times/stage-times?stageId=103489
+* Sample COMPLETE Output in STAGE.json
+* Sample NOT STARTED Output in STAGE-PENDING.json
+o Get list of entries with: https://rc.statusas.com/entry/table?search=&order=Identifier%20asc&eventId=4456&classes= 
+* Sample Output in ENTRY.json
+o Monitoring Feature:
+* CampRally should monitor the stages which are live to give updates on when cars start and finish
+* From the stage list, seems we can look at liveTimestamp and closedTimestamp to determine this
+* For each live stage pull the status of the stage and check when a car is going:
+* It would seem status 2 is for Expected and status 0 is for Complete. Status 3 is labeled as “DNS”, assuming it means did not start. TBD if what the status for in progress is and if there is a DNF status.
+* Example messages
+* Car 123 – Toyota 4Runner status changed to DNS on Maryhill Stage
+* Car 456 – Geometro status changed to Completed on Maryhill Stage 
+* MQTT Server
+o Just your usual MQTT server out of the box
+o No auth , open to all 
