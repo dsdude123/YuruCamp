@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>YuruCamp Terminal</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #1a1a1a; color: #e0e0e0; font-family: monospace; display: flex; flex-direction: column; height: 100vh; }
+  #header { padding: 8px 12px; background: #2a2a2a; border-bottom: 1px solid #444; font-size: 14px; color: #aaa; }
+  #messages { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 4px; }
+  .msg { font-size: 14px; line-height: 1.4; word-break: break-word; }
+  .msg.own { color: #7ec8e3; }
+  .msg.incoming { color: #e0e0e0; }
+  #input-row { display: flex; padding: 8px; gap: 8px; background: #2a2a2a; border-top: 1px solid #444; }
+  #msg-input { flex: 1; background: #111; border: 1px solid #555; color: #e0e0e0; padding: 8px; font-family: monospace; font-size: 14px; border-radius: 3px; }
+  #msg-input:focus { outline: none; border-color: #7ec8e3; }
+  #send-btn { background: #7ec8e3; color: #111; border: none; padding: 8px 16px; font-family: monospace; font-size: 14px; cursor: pointer; border-radius: 3px; }
+  #send-btn:hover { background: #a8dff0; }
+  #name-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 10; }
+  #name-box { background: #2a2a2a; border: 1px solid #555; padding: 24px; border-radius: 6px; display: flex; flex-direction: column; gap: 12px; min-width: 280px; }
+  #name-box h2 { font-size: 16px; color: #7ec8e3; }
+  #name-input { background: #111; border: 1px solid #555; color: #e0e0e0; padding: 8px; font-family: monospace; font-size: 14px; border-radius: 3px; }
+  #name-input:focus { outline: none; border-color: #7ec8e3; }
+  #name-btn { background: #7ec8e3; color: #111; border: none; padding: 8px; font-family: monospace; font-size: 14px; cursor: pointer; border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<div id="name-modal">
+  <div id="name-box">
+    <h2>YuruCamp Terminal</h2>
+    <p style="font-size:13px;color:#aaa;">Enter your callsign (max 10 chars)</p>
+    <input id="name-input" maxlength="10" placeholder="callsign" autofocus />
+    <button id="name-btn">Join</button>
+  </div>
+</div>
+
+<div id="header">YuruCamp Terminal — <span id="name-display"></span></div>
+<div id="messages"></div>
+<div id="input-row">
+  <input id="msg-input" placeholder="Type a message... (!weather for weather)" />
+  <button id="send-btn">Send</button>
+</div>
+
+<script>
+  const COOKIE_NAME = "yurucamp_name";
+
+  function getCookie(name) {
+    const match = document.cookie.match(new RegExp("(?:^|; )" + name + "=([^;]*)"));
+    return match ? decodeURIComponent(match[1]) : null;
+  }
+
+  function setCookie(name, value) {
+    const expires = new Date(Date.now() + 365 * 864e5).toUTCString();
+    document.cookie = `${name}=${encodeURIComponent(value)}; expires=${expires}; path=/`;
+  }
+
+  let myName = getCookie(COOKIE_NAME);
+  const modal = document.getElementById("name-modal");
+  const nameDisplay = document.getElementById("name-display");
+
+  function applyName(name) {
+    myName = name.trim().slice(0, 10);
+    setCookie(COOKIE_NAME, myName);
+    modal.style.display = "none";
+    nameDisplay.textContent = myName;
+  }
+
+  if (myName) {
+    modal.style.display = "none";
+    nameDisplay.textContent = myName;
+  }
+
+  document.getElementById("name-btn").addEventListener("click", () => {
+    const v = document.getElementById("name-input").value.trim();
+    if (v) applyName(v);
+  });
+
+  document.getElementById("name-input").addEventListener("keydown", e => {
+    if (e.key === "Enter") {
+      const v = document.getElementById("name-input").value.trim();
+      if (v) applyName(v);
+    }
+  });
+
+  const messages = document.getElementById("messages");
+  const msgInput = document.getElementById("msg-input");
+
+  function addMessage(text, own) {
+    const div = document.createElement("div");
+    div.className = "msg " + (own ? "own" : "incoming");
+    div.textContent = text;
+    messages.appendChild(div);
+    messages.scrollTop = messages.scrollHeight;
+  }
+
+  let ws;
+  function connect() {
+    ws = new WebSocket(`ws://${location.host}/ws`);
+    ws.onmessage = e => addMessage(e.data, false);
+    ws.onclose = () => setTimeout(connect, 2000);
+  }
+  connect();
+
+  function sendMessage() {
+    const text = msgInput.value.trim();
+    if (!text || !myName) return;
+    const payload = `[${myName}] ${text}`;
+    ws.send(payload);
+    addMessage(payload, true);
+    msgInput.value = "";
+  }
+
+  document.getElementById("send-btn").addEventListener("click", sendMessage);
+  msgInput.addEventListener("keydown", e => { if (e.key === "Enter") sendMessage(); });
+</script>
+</body>
+</html>
