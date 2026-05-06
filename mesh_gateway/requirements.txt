@@ -1,2 +1,2 @@
+meshcore
 paho-mqtt==1.6.1
-pyserial==3.5
