@@ -7,7 +7,8 @@ from meshcore import MeshCore, EventType
 SERIAL_PORT = os.environ.get("SERIAL_PORT", "/dev/ttyUSB0")
 BAUD_RATE = int(os.environ.get("BAUD_RATE", "115200"))
 MQTT_HOST = os.environ.get("MQTT_HOST", "localhost")
-CHANNEL_INDEX = int(os.environ.get("CHANNEL_INDEX", "0"))
+CHANNEL_NAME = os.environ.get("CHANNEL_NAME", "#public")
+MAX_CHANNELS = 40
 
 outbound_queue: asyncio.Queue = asyncio.Queue()
 
@@ -29,7 +30,6 @@ def make_mqtt_client():
 
 
 async def connect_mqtt(client: mqtt.Client):
-    loop = asyncio.get_event_loop()
     while True:
         try:
             client.connect(MQTT_HOST, 1883, 60)
@@ -40,11 +40,23 @@ async def connect_mqtt(client: mqtt.Client):
             await asyncio.sleep(2)
 
 
-async def outbound_worker(mc: MeshCore):
+async def resolve_channel_index(mc: MeshCore, name: str) -> int:
+    target = name.lstrip("#").lower()
+    for idx in range(MAX_CHANNELS):
+        ev = await mc.commands.get_channel(idx)
+        if ev.type == EventType.ERROR:
+            break
+        ch_name = ev.payload.get("channel_name", "")
+        if ch_name and ch_name.lstrip("#").lower() == target:
+            return idx
+    raise RuntimeError(f"Channel '{name}' not found on device")
+
+
+async def outbound_worker(mc: MeshCore, channel_idx: int):
     while True:
         text = await outbound_queue.get()
         try:
-            result = await mc.commands.send_chan_msg(CHANNEL_INDEX, text, int(time.time()))
+            result = await mc.commands.send_chan_msg(channel_idx, text, int(time.time()))
             if result.type == EventType.ERROR:
                 print(f"send_chan_msg error: {result.payload}")
         except Exception as e:
@@ -64,8 +76,11 @@ async def main():
             print(f"Mesh connect failed: {e}, retrying in 5s...")
             await asyncio.sleep(5)
 
+    channel_idx = await resolve_channel_index(mc, CHANNEL_NAME)
+    print(f"Using channel '{CHANNEL_NAME}' at index {channel_idx}")
+
     def on_channel_msg(event):
-        if event.payload.get("channel_idx") != CHANNEL_INDEX:
+        if event.payload.get("channel_idx") != channel_idx:
             return
         text = event.payload.get("text", "")
         if text:
@@ -79,7 +94,7 @@ async def main():
     mc.subscribe(EventType.CHANNEL_MSG_RECV, on_channel_msg)
     mc.subscribe(EventType.CONTACT_MSG_RECV, on_contact_msg)
 
-    await outbound_worker(mc)
+    await outbound_worker(mc, channel_idx)
 
 
 if __name__ == "__main__":

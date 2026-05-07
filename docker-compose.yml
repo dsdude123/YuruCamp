@@ -11,7 +11,7 @@ services:
     build: ./mesh_gateway
     environment:
       MQTT_HOST: mqtt
-      CHANNEL_INDEX: "${CHANNEL_INDEX:-0}"
+      CHANNEL_NAME: "${CHANNEL_NAME:-#public}"
 #    devices:
 #      - "/dev/ttyUSB0:/dev/ttyUSB0"
     depends_on:
