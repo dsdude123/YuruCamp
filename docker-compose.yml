@@ -1,8 +1,9 @@
 services:
   mqtt:
     image: eclipse-mosquitto:2
-    volumes:
-      - ./mosquitto:/mosquitto/config
+    configs:
+      - source: mosquitto_conf
+        target: /mosquitto/config/mosquitto.conf
     ports:
       - "1883:1883"
 
@@ -41,3 +42,10 @@ services:
     depends_on:
       - mqtt
     restart: unless-stopped
+
+configs:
+  mosquitto_conf:
+    content: |
+      listener 1883
+      allow_anonymous true
+
