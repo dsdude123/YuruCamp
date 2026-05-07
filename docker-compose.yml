@@ -11,8 +11,15 @@ services:
     build: ./mesh_gateway
     environment:
       MQTT_HOST: mqtt
+      # Override on hosts where the device enumerates differently, e.g.
+      # SERIAL_PORT=/dev/ttyUSB0 for CP210x/CH340 boards. Leave unset to
+      # let the gateway auto-detect by USB VID/PID.
+      SERIAL_PORT: ${SERIAL_PORT:-}
     devices:
-      - "/dev/ttyUSB0:/dev/ttyUSB0"
+      # ESP32-S3 native USB enumerates as a CDC ACM device.
+      # For a stable path across replugs, prefer the by-id symlink, e.g.:
+      #   - "/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_XX-XX-XX-if00:/dev/ttyACM0"
+      - "${MESH_DEVICE:-/dev/ttyACM0}:/dev/ttyACM0"
     depends_on:
       - mqtt
     restart: unless-stopped
