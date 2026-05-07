@@ -2,10 +2,43 @@ import asyncio
 import os
 import time
 import paho.mqtt.client as mqtt
+from serial.tools import list_ports
 from meshcore import MeshCore, EventType
 
-SERIAL_PORT = os.environ.get("SERIAL_PORT", "/dev/ttyUSB0")
+SERIAL_PORT = os.environ.get("SERIAL_PORT")
 BAUD_RATE = int(os.environ.get("BAUD_RATE", "115200"))
+
+# Known USB VID:PID pairs for common meshcore-compatible boards.
+# pid=None matches any product from that vendor.
+KNOWN_USB_IDS = {
+    (0x10C4, 0xEA60),  # Silicon Labs CP210x (Heltec, T-Beam, etc.)
+    (0x1A86, 0x7523),  # QinHeng CH340
+    (0x1A86, 0x55D4),  # QinHeng CH9102
+    (0x303A, 0x1001),  # Espressif ESP32-S2/S3 native USB
+    (0x239A, None),    # Adafruit (nRF52840 boards)
+    (0x2E8A, None),    # Raspberry Pi (RP2040)
+    (0x1915, None),    # Nordic Semiconductor
+}
+
+
+def autodetect_serial_port() -> str:
+    ports = list(list_ports.comports())
+    for p in ports:
+        if p.vid is None:
+            continue
+        for vid, pid in KNOWN_USB_IDS:
+            if p.vid == vid and (pid is None or p.pid == pid):
+                print(f"Auto-detected meshcore device on {p.device} "
+                      f"(VID:PID={p.vid:04x}:{p.pid or 0:04x}, {p.description})")
+                return p.device
+    for p in ports:
+        if p.device.startswith(("/dev/ttyACM", "/dev/ttyUSB")):
+            print(f"Falling back to {p.device} ({p.description})")
+            return p.device
+    raise RuntimeError(
+        "No serial device found. Set SERIAL_PORT env var explicitly. "
+        f"Available ports: {[p.device for p in ports] or 'none'}"
+    )
 MQTT_HOST = os.environ.get("MQTT_HOST", "localhost")
 CHANNEL_NAME = os.environ.get("CHANNEL_NAME", "#yurucamp-ft")
 MAX_CHANNELS = 40
@@ -83,8 +116,9 @@ async def main():
 
     while True:
         try:
-            mc = await MeshCore.create_serial(SERIAL_PORT, BAUD_RATE)
-            print(f"Mesh connected: {SERIAL_PORT} @ {BAUD_RATE}")
+            port = SERIAL_PORT or autodetect_serial_port()
+            mc = await MeshCore.create_serial(port, BAUD_RATE)
+            print(f"Mesh connected: {port} @ {BAUD_RATE}")
             break
         except Exception as e:
             print(f"Mesh connect failed: {e}, retrying in 5s...")
