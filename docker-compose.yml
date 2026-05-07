@@ -2,7 +2,7 @@ services:
   mqtt:
     image: eclipse-mosquitto:2
     volumes:
-      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf
+      - ./mosquitto:/mosquitto/config
     ports:
       - "1883:1883"
 
@@ -10,8 +10,6 @@ services:
     build: ./mesh_gateway
     environment:
       MQTT_HOST: mqtt
-      SERIAL_PORT: /dev/ttyUSB0
-      BAUD_RATE: "115200"
     devices:
       - "/dev/ttyUSB0:/dev/ttyUSB0"
     depends_on:
@@ -30,7 +28,6 @@ services:
     build: ./camp_terminal
     environment:
       MQTT_HOST: mqtt
-      PORT: "8080"
     ports:
       - "8080:8080"
     depends_on:
@@ -41,8 +38,6 @@ services:
     build: ./camp_rally
     environment:
       MQTT_HOST: mqtt
-      EVENT_ID: "4491"
-      POLL_INTERVAL: "30"
     depends_on:
       - mqtt
     restart: unless-stopped
