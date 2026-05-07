@@ -7,7 +7,7 @@ from meshcore import MeshCore, EventType
 SERIAL_PORT = os.environ.get("SERIAL_PORT", "/dev/ttyUSB0")
 BAUD_RATE = int(os.environ.get("BAUD_RATE", "115200"))
 MQTT_HOST = os.environ.get("MQTT_HOST", "localhost")
-CHANNEL_NAME = os.environ.get("CHANNEL_NAME", "#public")
+CHANNEL_NAME = os.environ.get("CHANNEL_NAME", "#yurucamp-ft")
 MAX_CHANNELS = 40
 
 outbound_queue: asyncio.Queue = asyncio.Queue()
@@ -42,6 +42,8 @@ async def connect_mqtt(client: mqtt.Client):
 
 async def resolve_channel_index(mc: MeshCore, name: str) -> int:
     target = name.lstrip("#").lower()
+    hashtag_name = "#" + target
+    first_empty = None
     for idx in range(MAX_CHANNELS):
         ev = await mc.commands.get_channel(idx)
         if ev.type == EventType.ERROR:
@@ -49,7 +51,19 @@ async def resolve_channel_index(mc: MeshCore, name: str) -> int:
         ch_name = ev.payload.get("channel_name", "")
         if ch_name and ch_name.lstrip("#").lower() == target:
             return idx
-    raise RuntimeError(f"Channel '{name}' not found on device")
+        if first_empty is None and not ch_name:
+            first_empty = idx
+
+    if first_empty is None:
+        raise RuntimeError(
+            f"Channel '{name}' not found and no empty slot to create it"
+        )
+
+    print(f"Channel '{hashtag_name}' not on device, creating at index {first_empty}")
+    ev = await mc.commands.set_channel(first_empty, hashtag_name)
+    if ev.type == EventType.ERROR:
+        raise RuntimeError(f"Failed to create channel '{hashtag_name}': {ev.payload}")
+    return first_empty
 
 
 async def outbound_worker(mc: MeshCore, channel_idx: int):
