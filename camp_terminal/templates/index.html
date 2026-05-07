@@ -98,7 +98,10 @@
   let ws;
   function connect() {
     ws = new WebSocket(`ws://${location.host}/ws`);
-    ws.onmessage = e => addMessage(e.data, false);
+    ws.onmessage = e => {
+      const own = myName && e.data.startsWith(`[${myName}] `);
+      addMessage(e.data, own);
+    };
     ws.onclose = () => setTimeout(connect, 2000);
   }
   connect();
@@ -106,9 +109,7 @@
   function sendMessage() {
     const text = msgInput.value.trim();
     if (!text || !myName) return;
-    const payload = `[${myName}] ${text}`;
-    ws.send(payload);
-    addMessage(payload, true);
+    ws.send(`[${myName}] ${text}`);
     msgInput.value = "";
   }
 
