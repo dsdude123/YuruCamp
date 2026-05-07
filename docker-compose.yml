@@ -11,8 +11,8 @@ services:
     build: ./mesh_gateway
     environment:
       MQTT_HOST: mqtt
-#    devices:
-#      - "/dev/ttyUSB0:/dev/ttyUSB0"
+    devices:
+      - "/dev/ttyUSB0:/dev/ttyUSB0"
     depends_on:
       - mqtt
     restart: unless-stopped
