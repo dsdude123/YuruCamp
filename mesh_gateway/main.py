@@ -65,6 +65,8 @@ async def main():
             await asyncio.sleep(5)
 
     def on_channel_msg(event):
+        if event.payload.get("channel_idx") != CHANNEL_INDEX:
+            return
         text = event.payload.get("text", "")
         if text:
             mqtt_client.publish("/yurucamp/inbound", text)
