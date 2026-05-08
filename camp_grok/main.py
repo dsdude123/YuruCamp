@@ -15,7 +15,7 @@ logger = logging.getLogger("camp_grok")
 MQTT_HOST = os.environ.get("MQTT_HOST", "localhost")
 XAI_API_KEY = os.environ.get("XAI_API_KEY", "")
 XAI_API_URL = os.environ.get("XAI_API_URL", "https://api.x.ai/v1/chat/completions")
-GROK_MODEL = os.environ.get("GROK_MODEL", "grok-3-mini")
+GROK_MODEL = os.environ.get("GROK_MODEL", "grok-4.3")
 GROK_SYSTEM_PROMPT = os.environ.get(
     "GROK_SYSTEM_PROMPT",
     "You are Grok, replying over a low-bandwidth meshcore radio link. "
