@@ -39,6 +39,7 @@ services:
     build: ./camp_rally
     environment:
       MQTT_HOST: mqtt
+      EVENT_ID: "4632"
     depends_on:
       - mqtt
     restart: unless-stopped
