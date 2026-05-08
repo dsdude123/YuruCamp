@@ -74,7 +74,10 @@ async def fetch_stage_times(client: httpx.AsyncClient, stage_id: int) -> list[di
 
 
 async def poll():
-    async with httpx.AsyncClient(timeout=15) as client:
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+    async with httpx.AsyncClient(timeout=15, headers=headers) as client:
         while True:
             try:
                 stages = await fetch_live_stages(client)
