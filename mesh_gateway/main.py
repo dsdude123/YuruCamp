@@ -1,8 +1,16 @@
 import asyncio
+import logging
 import os
 import time
 import paho.mqtt.client as mqtt
 from meshcore import MeshCore, EventType
+
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s %(levelname)-8s %(name)s: %(message)s",
+    datefmt="%Y-%m-%dT%H:%M:%S",
+)
+logger = logging.getLogger("mesh_gateway")
 
 SERIAL_PORT = os.environ.get("SERIAL_PORT", "/dev/ttyACM0")
 BAUD_RATE = int(os.environ.get("BAUD_RATE", "115200"))
@@ -17,14 +25,23 @@ def make_mqtt_client():
     client = mqtt.Client()
 
     def on_connect(c, userdata, flags, rc):
-        print(f"MQTT connected (rc={rc})")
+        if rc == 0:
+            logger.info("MQTT connected to %s", MQTT_HOST)
+        else:
+            logger.error("MQTT connect refused (rc=%d)", rc)
         c.subscribe("/yurucamp/outbound/#")
+        logger.debug("Subscribed to /yurucamp/outbound/#")
+
+    def on_disconnect(c, userdata, rc):
+        logger.warning("MQTT disconnected (rc=%d)", rc)
 
     def on_message(c, userdata, msg):
         payload = msg.payload.decode("utf-8", errors="replace")
+        logger.debug("MQTT outbound queued [%s]: %r", msg.topic, payload)
         outbound_queue.put_nowait(payload)
 
     client.on_connect = on_connect
+    client.on_disconnect = on_disconnect
     client.on_message = on_message
     return client
 
@@ -32,11 +49,12 @@ def make_mqtt_client():
 async def connect_mqtt(client: mqtt.Client):
     while True:
         try:
+            logger.info("Connecting to MQTT at %s:1883...", MQTT_HOST)
             client.connect(MQTT_HOST, 1883, 60)
             client.loop_start()
             return
         except Exception as e:
-            print(f"MQTT connect failed: {e}, retrying in 2s...")
+            logger.warning("MQTT connect failed: %s, retrying in 2s...", e)
             await asyncio.sleep(2)
 
 
@@ -50,6 +68,7 @@ async def resolve_channel_index(mc: MeshCore, name: str) -> int:
             break
         ch_name = ev.payload.get("channel_name", "")
         if ch_name and ch_name.lstrip("#").lower() == target:
+            logger.info("Found channel '%s' at index %d", hashtag_name, idx)
             return idx
         if first_empty is None and not ch_name:
             first_empty = idx
@@ -59,22 +78,26 @@ async def resolve_channel_index(mc: MeshCore, name: str) -> int:
             f"Channel '{name}' not found and no empty slot to create it"
         )
 
-    print(f"Channel '{hashtag_name}' not on device, creating at index {first_empty}")
+    logger.info("Channel '%s' not on device, creating at index %d", hashtag_name, first_empty)
     ev = await mc.commands.set_channel(first_empty, hashtag_name)
     if ev.type == EventType.ERROR:
         raise RuntimeError(f"Failed to create channel '{hashtag_name}': {ev.payload}")
+    logger.info("Channel '%s' created at index %d", hashtag_name, first_empty)
     return first_empty
 
 
 async def outbound_worker(mc: MeshCore, channel_idx: int):
     while True:
         text = await outbound_queue.get()
+        logger.info("Sending to mesh channel %d: %r", channel_idx, text)
         try:
             result = await mc.commands.send_chan_msg(channel_idx, text, int(time.time()))
             if result.type == EventType.ERROR:
-                print(f"send_chan_msg error: {result.payload}")
+                logger.error("send_chan_msg error: %s", result.payload)
+            else:
+                logger.debug("Mesh send OK for channel %d", channel_idx)
         except Exception as e:
-            print(f"Mesh send error: {e}")
+            logger.error("Mesh send exception: %s", e)
 
 
 async def main():
@@ -83,30 +106,53 @@ async def main():
 
     while True:
         try:
+            logger.info("Connecting to mesh device at %s @ %d baud...", SERIAL_PORT, BAUD_RATE)
             mc = await MeshCore.create_serial(SERIAL_PORT, BAUD_RATE)
-            print(f"Mesh connected: {SERIAL_PORT} @ {BAUD_RATE}")
+            logger.info("Mesh connected: %s @ %d", SERIAL_PORT, BAUD_RATE)
             break
         except Exception as e:
-            print(f"Mesh connect failed: {e}, retrying in 5s...")
+            logger.warning("Mesh connect failed: %s, retrying in 5s...", e)
             await asyncio.sleep(5)
 
     channel_idx = await resolve_channel_index(mc, CHANNEL_NAME)
-    print(f"Using channel '{CHANNEL_NAME}' at index {channel_idx}")
+    logger.info("Using channel '%s' at index %d", CHANNEL_NAME, channel_idx)
 
     def on_channel_msg(event):
-        if event.payload.get("channel_idx") != channel_idx:
+        payload = event.payload
+        incoming_idx = payload.get("channel_idx")
+        text = payload.get("text", "")
+        sender = payload.get("sender_node_id", "unknown")
+        logger.debug(
+            "Channel msg received: channel_idx=%s sender=%s text=%r",
+            incoming_idx, sender, text,
+        )
+        if incoming_idx != channel_idx:
+            logger.debug(
+                "Ignoring channel msg for idx %s (watching %d)", incoming_idx, channel_idx
+            )
             return
-        text = event.payload.get("text", "")
-        if text:
-            mqtt_client.publish("/yurucamp/inbound", text)
+        if not text:
+            logger.debug("Channel msg from %s has no text, skipping", sender)
+            return
+        logger.info("Inbound channel msg from %s: %r", sender, text)
+        result = mqtt_client.publish("/yurucamp/inbound", text)
+        logger.debug("Published to /yurucamp/inbound (mid=%s)", result.mid)
 
     def on_contact_msg(event):
-        text = event.payload.get("text", "")
-        if text:
-            mqtt_client.publish("/yurucamp/inbound", text)
+        payload = event.payload
+        text = payload.get("text", "")
+        sender = payload.get("sender_node_id", "unknown")
+        logger.debug("Contact msg received: sender=%s text=%r", sender, text)
+        if not text:
+            logger.debug("Contact msg from %s has no text, skipping", sender)
+            return
+        logger.info("Inbound contact msg from %s: %r", sender, text)
+        result = mqtt_client.publish("/yurucamp/inbound", text)
+        logger.debug("Published to /yurucamp/inbound (mid=%s)", result.mid)
 
     mc.subscribe(EventType.CHANNEL_MSG_RECV, on_channel_msg)
     mc.subscribe(EventType.CONTACT_MSG_RECV, on_contact_msg)
+    logger.info("Subscribed to CHANNEL_MSG_RECV and CONTACT_MSG_RECV events")
 
     await outbound_worker(mc, channel_idx)
 
