@@ -12,7 +12,7 @@ services:
     environment:
       MQTT_HOST: mqtt
     devices:
-      - "/dev/ttyUSB0:/dev/ttyUSB0"
+      - "/dev/ttyACM0:/dev/ttyACM0"
     depends_on:
       - mqtt
     restart: unless-stopped
