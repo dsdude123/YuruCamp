@@ -53,6 +53,15 @@ services:
       - mqtt
     restart: unless-stopped
 
+  camp_grok:
+    build: ./camp_grok
+    environment:
+      MQTT_HOST: mqtt
+      XAI_API_KEY: "${XAI_API_KEY:-}"
+    depends_on:
+      - mqtt
+    restart: unless-stopped
+
   camp_announce:
     image: eclipse-mosquitto:2
     command: >
