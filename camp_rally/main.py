@@ -91,7 +91,10 @@ async def simulate(client: httpx.AsyncClient):
         logger.error("[SIMULATE] No stages returned for event %s", EVENT_ID)
         return
     stage = stages[0]
-    stage_id = stage["id"]
+    stage_id = stage.get("id") or stage.get("locationGroupId")
+    if stage_id is None:
+        logger.error("[SIMULATE] First stage has no id/locationGroupId: %s", stage)
+        return
     stage_name = stage.get("name", str(stage_id))
     logger.info("[SIMULATE] Treating first stage as live: '%s' (id=%d)", stage_name, stage_id)
 
