@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import random
 import time
 import uuid
 from datetime import datetime, timezone
@@ -19,6 +20,9 @@ EVENT_ID = os.environ.get("EVENT_ID")
 if EVENT_ID is None:
     raise RuntimeError("EVENT_ID environment variable is not set")
 POLL_INTERVAL = int(os.environ.get("POLL_INTERVAL", "30"))
+SIMULATE_MODE = os.environ.get("SIMULATE_MODE", "").lower() in ("1", "true", "yes", "on")
+SIMULATE_START_INTERVAL = int(os.environ.get("SIMULATE_START_INTERVAL", "30"))
+SIMULATE_STOP_INTERVAL = int(os.environ.get("SIMULATE_STOP_INTERVAL", "120"))
 BASE_URL = "https://rc.statusas.com"
 
 STATUS_MAP = {0: "Completed", 2: "Expected", 3: "DNS"}
@@ -79,6 +83,53 @@ async def fetch_stage_times(client: httpx.AsyncClient, stage_id: int) -> list[di
     return times
 
 
+async def simulate(client: httpx.AsyncClient):
+    resp = await client.get(f"{BASE_URL}/itinerary/stages", params={"eventId": EVENT_ID})
+    resp.raise_for_status()
+    stages = resp.json()
+    if not stages:
+        logger.error("[SIMULATE] No stages returned for event %s", EVENT_ID)
+        return
+    stage = stages[0]
+    stage_id = stage["id"]
+    stage_name = stage.get("name", str(stage_id))
+    logger.info("[SIMULATE] Treating first stage as live: '%s' (id=%d)", stage_name, stage_id)
+
+    times = await fetch_stage_times(client, stage_id)
+    cars = {t["identifier"]: t.get("make", "") for t in times}
+    if not cars:
+        logger.error("[SIMULATE] No cars on stage '%s'", stage_name)
+        return
+    states = {ident: "Expected" for ident in cars}
+    logger.info("[SIMULATE] Tracking %d car(s) on '%s'", len(cars), stage_name)
+
+    def publish(ident: str, status: str):
+        states[ident] = status
+        msg = f"Car {ident} – {cars[ident]} status changed to {status} on {stage_name}"
+        mqtt_client.publish("/yurucamp/outbound", msg)
+        logger.info("[SIMULATE] %s", msg)
+
+    async def starter():
+        while True:
+            await asyncio.sleep(SIMULATE_START_INTERVAL)
+            expected = [i for i, s in states.items() if s == "Expected"]
+            if not expected:
+                logger.debug("[SIMULATE] No Expected cars left to start")
+                continue
+            publish(random.choice(expected), "Started")
+
+    async def stopper():
+        while True:
+            await asyncio.sleep(SIMULATE_STOP_INTERVAL)
+            started = [i for i, s in states.items() if s == "Started"]
+            if not started:
+                logger.debug("[SIMULATE] No Started cars to stop")
+                continue
+            publish(random.choice(started), "Completed")
+
+    await asyncio.gather(starter(), stopper())
+
+
 async def poll():
     device_id = str(uuid.uuid4())
     headers = {
@@ -94,6 +145,13 @@ async def poll():
         resp = await client.get(f"{BASE_URL}/identity")
         resp.raise_for_status()
         logger.info("Identity established: %s", resp.json())
+        if SIMULATE_MODE:
+            logger.info(
+                "[SIMULATE] Mode enabled (start every %ds, stop every %ds)",
+                SIMULATE_START_INTERVAL, SIMULATE_STOP_INTERVAL,
+            )
+            await simulate(client)
+            return
         while True:
             try:
                 stages = await fetch_live_stages(client)
@@ -132,7 +190,10 @@ async def poll():
 
 
 def main():
-    logger.info("camp_rally starting (event_id=%s, poll_interval=%ds)", EVENT_ID, POLL_INTERVAL)
+    logger.info(
+        "camp_rally starting (event_id=%s, poll_interval=%ds, simulate=%s)",
+        EVENT_ID, POLL_INTERVAL, SIMULATE_MODE,
+    )
     connect_mqtt()
     asyncio.run(poll())
 
