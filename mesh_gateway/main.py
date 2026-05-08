@@ -4,7 +4,7 @@ import time
 import paho.mqtt.client as mqtt
 from meshcore import MeshCore, EventType
 
-SERIAL_PORT = os.environ.get("SERIAL_PORT", "/dev/ttyUSB0")
+SERIAL_PORT = os.environ.get("SERIAL_PORT", "/dev/ttyACM0")
 BAUD_RATE = int(os.environ.get("BAUD_RATE", "115200"))
 MQTT_HOST = os.environ.get("MQTT_HOST", "localhost")
 CHANNEL_NAME = os.environ.get("CHANNEL_NAME", "#yurucamp-ft")
