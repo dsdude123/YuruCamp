@@ -13,10 +13,22 @@ logger = logging.getLogger("camp_router")
 MQTT_HOST = os.environ.get("MQTT_HOST", "localhost")
 
 
+def strip_sender_prefix(payload):
+    """Strip a sender prefix like '[name] ' or 'name: ' from the payload, if present."""
+    if payload.startswith("[") and "] " in payload:
+        return payload.split("] ", 1)[1]
+    if ": " in payload:
+        prefix, rest = payload.split(": ", 1)
+        if "\n" not in prefix:
+            return rest
+    return payload
+
+
 def parse_command(payload):
-    """Return (cmd, remainder) if payload starts with !cmd, else (None, payload)."""
-    if payload.startswith("!"):
-        parts = payload[1:].split(" ", 1)
+    """Return (cmd, remainder) if payload (after any sender prefix) starts with !cmd, else (None, payload)."""
+    body = strip_sender_prefix(payload)
+    if body.startswith("!"):
+        parts = body[1:].split(" ", 1)
         cmd = parts[0].lower()
         remainder = parts[1] if len(parts) > 1 else ""
         return cmd, remainder
