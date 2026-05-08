@@ -6,7 +6,9 @@ import httpx
 import paho.mqtt.client as mqtt
 
 MQTT_HOST = os.environ.get("MQTT_HOST", "localhost")
-EVENT_ID = os.environ.get("EVENT_ID", "4491")
+EVENT_ID = os.environ.get("EVENT_ID")
+if EVENT_ID is None:
+    raise RuntimeError("EVENT_ID environment variable is not set")
 POLL_INTERVAL = int(os.environ.get("POLL_INTERVAL", "30"))
 BASE_URL = "https://rc.statusas.com"
 
