@@ -14,7 +14,7 @@ logger = logging.getLogger("camp_grok")
 
 MQTT_HOST = os.environ.get("MQTT_HOST", "localhost")
 XAI_API_KEY = os.environ.get("XAI_API_KEY", "")
-XAI_API_URL = os.environ.get("XAI_API_URL", "https://api.x.ai/v1/chat/completions")
+XAI_API_URL = os.environ.get("XAI_API_URL", "https://api.x.ai/v1/responses")
 GROK_MODEL = os.environ.get("GROK_MODEL", "grok-4.3")
 GROK_SYSTEM_PROMPT = os.environ.get(
     "GROK_SYSTEM_PROMPT",
@@ -23,22 +23,34 @@ GROK_SYSTEM_PROMPT = os.environ.get(
 )
 GROK_MAX_TOKENS = int(os.environ.get("GROK_MAX_TOKENS", "2048"))
 GROK_TIMEOUT = float(os.environ.get("GROK_TIMEOUT", "60"))
-GROK_SEARCH_MODE = os.environ.get("GROK_SEARCH_MODE", "auto")
 
 mqtt_client = mqtt.Client()
 request_queue: asyncio.Queue = asyncio.Queue()
 event_loop: asyncio.AbstractEventLoop | None = None
 
 
+def extract_output_text(data: dict) -> str:
+    parts: list[str] = []
+    for item in data.get("output") or []:
+        if item.get("type") != "message":
+            continue
+        for chunk in item.get("content") or []:
+            if chunk.get("type") == "output_text":
+                text = chunk.get("text") or ""
+                if text:
+                    parts.append(text)
+    return "\n".join(parts).strip()
+
+
 async def ask_grok(client: httpx.AsyncClient, prompt: str) -> str:
     body = {
         "model": GROK_MODEL,
-        "messages": [
+        "input": [
             {"role": "system", "content": GROK_SYSTEM_PROMPT},
             {"role": "user", "content": prompt},
         ],
-        "max_tokens": GROK_MAX_TOKENS,
-        "search_parameters": {"mode": GROK_SEARCH_MODE, "return_citations": False},
+        "max_output_tokens": GROK_MAX_TOKENS,
+        "tools": [{"type": "web_search"}],
     }
     headers = {
         "Authorization": f"Bearer {XAI_API_KEY}",
@@ -48,11 +60,10 @@ async def ask_grok(client: httpx.AsyncClient, prompt: str) -> str:
     resp = await client.post(XAI_API_URL, json=body, headers=headers)
     resp.raise_for_status()
     data = resp.json()
-    choices = data.get("choices") or []
-    if not choices:
-        raise RuntimeError("xAI returned no choices")
-    content = (choices[0].get("message") or {}).get("content") or ""
-    return content.strip()
+    text = extract_output_text(data)
+    if not text:
+        raise RuntimeError("xAI returned no output text")
+    return text
 
 
 async def worker():
