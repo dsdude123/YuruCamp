@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import time
+import uuid
 from datetime import datetime, timezone
 import httpx
 import paho.mqtt.client as mqtt
@@ -74,10 +75,20 @@ async def fetch_stage_times(client: httpx.AsyncClient, stage_id: int) -> list[di
 
 
 async def poll():
+    device_id = str(uuid.uuid4())
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "*/*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Referer": f"{BASE_URL}/events/{EVENT_ID}/itinerary",
+        "device-id": device_id,
     }
-    async with httpx.AsyncClient(timeout=15, headers=headers) as client:
+    cookies = {"deviceId": device_id}
+    async with httpx.AsyncClient(timeout=15, headers=headers, cookies=cookies) as client:
+        logger.info("Bootstrapping identity (device_id=%s)", device_id)
+        resp = await client.get(f"{BASE_URL}/identity")
+        resp.raise_for_status()
+        logger.info("Identity established: %s", resp.json())
         while True:
             try:
                 stages = await fetch_live_stages(client)
