@@ -57,10 +57,15 @@ async def fetch_live_stages(client: httpx.AsyncClient) -> list[dict]:
     resp = await client.get(f"{BASE_URL}/itinerary/stages", params={"eventId": EVENT_ID})
     resp.raise_for_status()
     stages = resp.json()
-    live = [
-        s for s in stages
-        if s.get("liveTimestamp", 0) <= now <= s.get("closedTimestamp", 0)
-    ]
+    live = []
+    for s in stages:
+        live_ts = s.get("liveTimestamp")
+        closed_ts = s.get("closedTimestamp")
+        if live_ts is None or live_ts > now:
+            continue
+        if closed_ts is not None and closed_ts < now:
+            continue
+        live.append(s)
     logger.debug("Got %d total stages, %d live", len(stages), len(live))
     return live
 
