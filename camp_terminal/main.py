@@ -105,6 +105,7 @@ async def websocket_endpoint(websocket: WebSocket):
     mqtt_pub = mqtt.Client()
     try:
         mqtt_pub.connect(MQTT_HOST, 1883, 60)
+        mqtt_pub.loop_start()
         logger.debug("Per-WS MQTT publisher connected for %s", client_host)
     except Exception as e:
         logger.warning("Per-WS MQTT publisher connect failed for %s: %s", client_host, e)
@@ -118,6 +119,12 @@ async def websocket_endpoint(websocket: WebSocket):
     except WebSocketDisconnect:
         logger.info("WebSocket client disconnected: %s (total=%d)", client_host, len(connected_clients) - 1)
         connected_clients.discard(websocket)
+    finally:
+        try:
+            mqtt_pub.loop_stop()
+            mqtt_pub.disconnect()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
