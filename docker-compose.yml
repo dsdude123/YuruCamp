@@ -40,6 +40,7 @@ services:
     environment:
       MQTT_HOST: mqtt
       EVENT_ID: "4632"
+      SIMULATE_MODE: ""
     depends_on:
       - mqtt
     restart: unless-stopped
