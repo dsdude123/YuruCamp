@@ -154,6 +154,9 @@ async def main():
     mc.subscribe(EventType.CONTACT_MSG_RECV, on_contact_msg)
     logger.info("Subscribed to CHANNEL_MSG_RECV and CONTACT_MSG_RECV events")
 
+    await mc.start_auto_message_fetching()
+    logger.info("Auto message fetching started")
+
     await outbound_worker(mc, channel_idx)
 
 
