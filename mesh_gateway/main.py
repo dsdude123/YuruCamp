@@ -17,34 +17,25 @@ BAUD_RATE = int(os.environ.get("BAUD_RATE", "115200"))
 MQTT_HOST = os.environ.get("MQTT_HOST", "localhost")
 CHANNEL_NAME = os.environ.get("CHANNEL_NAME", "#yurucamp-ft")
 MAX_CHANNELS = 40
-MAX_MSG_BYTES = int(os.environ.get("MAX_MSG_BYTES", "140"))
+MAX_MSG_CHARS = 138
 CHUNK_DELAY = float(os.environ.get("CHUNK_DELAY", "5.0"))
 
 outbound_queue: asyncio.Queue = asyncio.Queue()
 
 
-def split_on_spaces(text: str, max_bytes: int) -> list[str]:
+def split_on_spaces(text: str, max_chars: int) -> list[str]:
     text = text.strip()
     if not text:
         return []
-    if len(text.encode("utf-8")) <= max_bytes:
+    if len(text) <= max_chars:
         return [text]
 
     chunks: list[str] = []
     remaining = text
-    while len(remaining.encode("utf-8")) > max_bytes:
-        used = 0
-        char_fits = 0
-        for i, ch in enumerate(remaining):
-            cb = len(ch.encode("utf-8"))
-            if used + cb > max_bytes:
-                break
-            used += cb
-            char_fits = i + 1
-
-        cut = remaining.rfind(" ", 0, char_fits)
+    while len(remaining) > max_chars:
+        cut = remaining.rfind(" ", 0, max_chars + 1)
         if cut <= 0:
-            cut = char_fits
+            cut = max_chars
 
         piece = remaining[:cut].rstrip()
         if piece:
@@ -124,7 +115,7 @@ async def resolve_channel_index(mc: MeshCore, name: str) -> int:
 async def outbound_worker(mc: MeshCore, channel_idx: int):
     while True:
         text = await outbound_queue.get()
-        chunks = split_on_spaces(text, MAX_MSG_BYTES)
+        chunks = split_on_spaces(text, MAX_MSG_CHARS)
         if not chunks:
             logger.debug("Outbound message empty after stripping, skipping")
             continue
@@ -136,8 +127,8 @@ async def outbound_worker(mc: MeshCore, channel_idx: int):
             if i > 0:
                 await asyncio.sleep(CHUNK_DELAY)
             logger.debug(
-                "Sending chunk %d/%d (%d bytes): %r",
-                i + 1, len(chunks), len(chunk.encode("utf-8")), chunk,
+                "Sending chunk %d/%d (%d chars): %r",
+                i + 1, len(chunks), len(chunk), chunk,
             )
             try:
                 result = await mc.commands.send_chan_msg(
