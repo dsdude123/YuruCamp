@@ -44,6 +44,14 @@ services:
       - mqtt
     restart: unless-stopped
 
+  camp_weather:
+    build: ./camp_weather
+    environment:
+      MQTT_HOST: mqtt
+    depends_on:
+      - mqtt
+    restart: unless-stopped
+
   camp_announce:
     image: eclipse-mosquitto:2
     command: >
