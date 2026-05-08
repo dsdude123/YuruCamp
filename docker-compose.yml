@@ -44,9 +44,27 @@ services:
       - mqtt
     restart: unless-stopped
 
+  camp_announce:
+    image: eclipse-mosquitto:2
+    command: >
+      sh -c "until mosquitto_pub -h mqtt -t /yurucamp/outbound -m 'YuruCamp stack online' 2>/dev/null; do
+        echo 'Waiting for MQTT...'; sleep 2;
+      done; echo 'Startup message sent'"
+    depends_on:
+      - mqtt
+      - camp_router
+    restart: "no"
+
+  dozzle:
+    image: amir20/dozzle:latest
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "8888:8080"
+    restart: unless-stopped
+
 configs:
   mosquitto_conf:
     content: |
       listener 1883
       allow_anonymous true
-
