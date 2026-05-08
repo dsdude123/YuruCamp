@@ -17,8 +17,43 @@ BAUD_RATE = int(os.environ.get("BAUD_RATE", "115200"))
 MQTT_HOST = os.environ.get("MQTT_HOST", "localhost")
 CHANNEL_NAME = os.environ.get("CHANNEL_NAME", "#yurucamp-ft")
 MAX_CHANNELS = 40
+MAX_MSG_BYTES = int(os.environ.get("MAX_MSG_BYTES", "140"))
+CHUNK_DELAY = float(os.environ.get("CHUNK_DELAY", "5.0"))
 
 outbound_queue: asyncio.Queue = asyncio.Queue()
+
+
+def split_on_spaces(text: str, max_bytes: int) -> list[str]:
+    text = text.strip()
+    if not text:
+        return []
+    if len(text.encode("utf-8")) <= max_bytes:
+        return [text]
+
+    chunks: list[str] = []
+    remaining = text
+    while len(remaining.encode("utf-8")) > max_bytes:
+        used = 0
+        char_fits = 0
+        for i, ch in enumerate(remaining):
+            cb = len(ch.encode("utf-8"))
+            if used + cb > max_bytes:
+                break
+            used += cb
+            char_fits = i + 1
+
+        cut = remaining.rfind(" ", 0, char_fits)
+        if cut <= 0:
+            cut = char_fits
+
+        piece = remaining[:cut].rstrip()
+        if piece:
+            chunks.append(piece)
+        remaining = remaining[cut:].lstrip()
+
+    if remaining:
+        chunks.append(remaining)
+    return chunks
 
 
 def make_mqtt_client():
@@ -89,15 +124,40 @@ async def resolve_channel_index(mc: MeshCore, name: str) -> int:
 async def outbound_worker(mc: MeshCore, channel_idx: int):
     while True:
         text = await outbound_queue.get()
-        logger.info("Sending to mesh channel %d: %r", channel_idx, text)
-        try:
-            result = await mc.commands.send_chan_msg(channel_idx, text, int(time.time()))
-            if result.type == EventType.ERROR:
-                logger.error("send_chan_msg error: %s", result.payload)
-            else:
-                logger.debug("Mesh send OK for channel %d", channel_idx)
-        except Exception as e:
-            logger.error("Mesh send exception: %s", e)
+        chunks = split_on_spaces(text, MAX_MSG_BYTES)
+        if not chunks:
+            logger.debug("Outbound message empty after stripping, skipping")
+            continue
+        logger.info(
+            "Sending to mesh channel %d in %d chunk(s): %r",
+            channel_idx, len(chunks), text,
+        )
+        for i, chunk in enumerate(chunks):
+            if i > 0:
+                await asyncio.sleep(CHUNK_DELAY)
+            logger.debug(
+                "Sending chunk %d/%d (%d bytes): %r",
+                i + 1, len(chunks), len(chunk.encode("utf-8")), chunk,
+            )
+            try:
+                result = await mc.commands.send_chan_msg(
+                    channel_idx, chunk, int(time.time())
+                )
+                if result.type == EventType.ERROR:
+                    logger.error(
+                        "send_chan_msg error on chunk %d/%d: %s",
+                        i + 1, len(chunks), result.payload,
+                    )
+                else:
+                    logger.debug(
+                        "Mesh send OK for channel %d (chunk %d/%d)",
+                        channel_idx, i + 1, len(chunks),
+                    )
+            except Exception as e:
+                logger.error(
+                    "Mesh send exception on chunk %d/%d: %s",
+                    i + 1, len(chunks), e,
+                )
 
 
 async def main():
