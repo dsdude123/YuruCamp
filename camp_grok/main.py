@@ -18,11 +18,12 @@ XAI_API_URL = os.environ.get("XAI_API_URL", "https://api.x.ai/v1/chat/completion
 GROK_MODEL = os.environ.get("GROK_MODEL", "grok-4.3")
 GROK_SYSTEM_PROMPT = os.environ.get(
     "GROK_SYSTEM_PROMPT",
-    "You are Grok, replying over a low-bandwidth meshcore radio link. "
-    "Answer in plain text, no markdown, in 2 short sentences or fewer.",
+    "You are Grok. Use your full capabilities including web search and reasoning. "
+    "Reply in plain text without markdown, and keep the final answer to 2 short sentences.",
 )
-GROK_MAX_TOKENS = int(os.environ.get("GROK_MAX_TOKENS", "200"))
-GROK_TIMEOUT = float(os.environ.get("GROK_TIMEOUT", "30"))
+GROK_MAX_TOKENS = int(os.environ.get("GROK_MAX_TOKENS", "2048"))
+GROK_TIMEOUT = float(os.environ.get("GROK_TIMEOUT", "60"))
+GROK_SEARCH_MODE = os.environ.get("GROK_SEARCH_MODE", "auto")
 
 mqtt_client = mqtt.Client()
 request_queue: asyncio.Queue = asyncio.Queue()
@@ -37,6 +38,7 @@ async def ask_grok(client: httpx.AsyncClient, prompt: str) -> str:
             {"role": "user", "content": prompt},
         ],
         "max_tokens": GROK_MAX_TOKENS,
+        "search_parameters": {"mode": GROK_SEARCH_MODE, "return_citations": False},
     }
     headers = {
         "Authorization": f"Bearer {XAI_API_KEY}",
