@@ -14,6 +14,10 @@ MQTT_HOST = os.environ.get("MQTT_HOST", "localhost")
 
 COMMAND_ALIASES = {
     "gork": "grok",
+    "doc": "sportity",
+    "docs": "sportity",
+    "document": "sportity",
+    "documents": "sportity",
 }
 
 
