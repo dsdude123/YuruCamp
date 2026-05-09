@@ -428,8 +428,7 @@ async def handle_command(client: httpx.AsyncClient, payload: str, state: dict) -
             return
         lines = [f"{d['id']}. {d['name']}" for d in docs]
         msg = "Sportity files:\n" + "\n".join(lines)
-        for chunk in chunk_for_mesh(msg):
-            publish(chunk)
+        publish(msg)
         return
 
     if cmd == "context":
