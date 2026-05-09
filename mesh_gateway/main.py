@@ -47,7 +47,7 @@ def split_on_spaces(text: str, max_chars: int) -> list[str]:
     return chunks
 
 
-def make_mqtt_client():
+def make_mqtt_client(loop: asyncio.AbstractEventLoop):
     client = mqtt.Client()
 
     def on_connect(c, userdata, flags, rc):
@@ -64,7 +64,7 @@ def make_mqtt_client():
     def on_message(c, userdata, msg):
         payload = msg.payload.decode("utf-8", errors="replace")
         logger.debug("MQTT outbound queued [%s]: %r", msg.topic, payload)
-        outbound_queue.put_nowait(payload)
+        loop.call_soon_threadsafe(outbound_queue.put_nowait, payload)
 
     client.on_connect = on_connect
     client.on_disconnect = on_disconnect
@@ -152,7 +152,8 @@ async def outbound_worker(mc: MeshCore, channel_idx: int):
 
 
 async def main():
-    mqtt_client = make_mqtt_client()
+    loop = asyncio.get_event_loop()
+    mqtt_client = make_mqtt_client(loop)
     await connect_mqtt(mqtt_client)
 
     while True:
