@@ -12,6 +12,10 @@ logger = logging.getLogger("camp_router")
 
 MQTT_HOST = os.environ.get("MQTT_HOST", "localhost")
 
+COMMAND_ALIASES = {
+    "gork": "grok",
+}
+
 
 def strip_sender_prefix(payload):
     """Strip a sender prefix like '[name] ' or 'name: ' from the payload, if present."""
@@ -30,6 +34,7 @@ def parse_command(payload):
     if body.startswith("!"):
         parts = body[1:].split(" ", 1)
         cmd = parts[0].lower()
+        cmd = COMMAND_ALIASES.get(cmd, cmd)
         remainder = parts[1] if len(parts) > 1 else ""
         return cmd, remainder
     return None, payload
