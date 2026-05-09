@@ -55,6 +55,12 @@ def connect_mqtt():
             time.sleep(2)
 
 
+def _parse_ts(ts) -> float:
+    if isinstance(ts, str):
+        return datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp() * 1000
+    return float(ts)
+
+
 async def fetch_live_stages(client: httpx.AsyncClient) -> list[dict]:
     now = datetime.now(timezone.utc).timestamp() * 1000
     logger.debug("Fetching live stages for event %s (now=%d)", EVENT_ID, int(now))
@@ -65,9 +71,9 @@ async def fetch_live_stages(client: httpx.AsyncClient) -> list[dict]:
     for s in stages:
         live_ts = s.get("liveTimestamp")
         closed_ts = s.get("closedTimestamp")
-        if live_ts is None or live_ts > now:
+        if live_ts is None or _parse_ts(live_ts) > now:
             continue
-        if closed_ts is not None and closed_ts < now:
+        if closed_ts is not None and _parse_ts(closed_ts) < now:
             continue
         live.append(s)
     logger.debug("Got %d total stages, %d live", len(stages), len(live))
