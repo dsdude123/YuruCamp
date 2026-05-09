@@ -161,6 +161,7 @@ async def poll():
             )
             await simulate(client)
             return
+        first_poll = True
         while True:
             try:
                 stages = await fetch_live_stages(client)
@@ -182,18 +183,23 @@ async def poll():
                             key = (stage_id, identifier)
                             prev = prev_states.get(key)
                             if prev != status_name:
-                                logger.debug(
-                                    "Car %s state change: %s -> %s (stage=%s)",
-                                    identifier, prev, status_name, stage_name,
-                                )
                                 prev_states[key] = status_name
-                                msg = f"Car {identifier} – {make} status changed to {status_name} on {stage_name}"
-                                mqtt_client.publish("/yurucamp/outbound", msg)
-                                logger.info("Published status change: %s", msg)
-                                changes += 1
-                        logger.debug("Stage '%s': %d change(s) published", stage_name, changes)
+                                if not first_poll:
+                                    logger.debug(
+                                        "Car %s state change: %s -> %s (stage=%s)",
+                                        identifier, prev, status_name, stage_name,
+                                    )
+                                    msg = f"Car {identifier} – {make} status changed to {status_name} on {stage_name}"
+                                    mqtt_client.publish("/yurucamp/outbound", msg)
+                                    logger.info("Published status change: %s", msg)
+                                    changes += 1
+                        if first_poll:
+                            logger.info("Stage '%s': seeded %d car state(s), no publish on first start", stage_name, len(times))
+                        else:
+                            logger.debug("Stage '%s': %d change(s) published", stage_name, changes)
             except Exception as e:
                 logger.error("Poll error: %s", e, exc_info=True)
+            first_poll = False
             logger.debug("Sleeping %ds before next poll", POLL_INTERVAL)
             await asyncio.sleep(POLL_INTERVAL)
 
