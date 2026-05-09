@@ -507,7 +507,7 @@ async def main_async():
                 logger.error("Initial sync failed: %s", e, exc_info=True)
                 state = {"docs": []}
 
-        next_poll = time.monotonic() + POLL_INTERVAL
+        next_poll = time.monotonic()
         while True:
             timeout = max(0.0, next_poll - time.monotonic())
             try:
