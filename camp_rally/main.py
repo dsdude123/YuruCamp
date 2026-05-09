@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import random
+import sys
 import time
 import uuid
 from datetime import datetime, timezone
@@ -219,6 +220,13 @@ async def poll():
                             logger.info("Stage '%s': seeded %d car state(s), no publish on first start", stage_name, len(times))
                         else:
                             logger.debug("Stage '%s': %d change(s) published", stage_name, changes)
+            except httpx.HTTPStatusError as e:
+                location = e.response.headers.get("location", "")
+                if e.response.status_code == 302 and "AccessDenied" in location:
+                    logger.error("Access denied — auth expired, exiting to trigger container restart")
+                    mqtt_client.loop_stop()
+                    sys.exit(1)
+                logger.error("Poll error: %s", e, exc_info=True)
             except Exception as e:
                 logger.error("Poll error: %s", e, exc_info=True)
             first_poll = False
