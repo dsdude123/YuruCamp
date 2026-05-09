@@ -23,7 +23,7 @@ logger = logging.getLogger("camp_sportity")
 MQTT_HOST = os.environ.get("MQTT_HOST", "localhost")
 SPORTITY_URL = os.environ.get(
     "SPORTITY_URL",
-    "https://webapp.sportity.com/event/OTR2026/751bfffa-ae55-43db-a6cd-e6ff0d64ce2e",
+    "https://webapp.sportity.com/event/ROV2026/2565a93b-447f-403a-a1b4-374bf12e22ec",
 )
 POLL_INTERVAL = int(os.environ.get("SPORTITY_POLL_INTERVAL", str(30 * 60)))
 DATA_DIR = Path(os.environ.get("SPORTITY_DATA_DIR", "/data"))
