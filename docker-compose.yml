@@ -6,6 +6,12 @@ services:
         target: /mosquitto/config/mosquitto.conf
     ports:
       - "1883:1883"
+    healthcheck:
+      test: ["CMD-SHELL", "mosquitto_pub -h localhost -p 1883 -t /healthcheck -m ok -q 0"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
 
   mesh_gateway:
     build: ./mesh_gateway
@@ -14,7 +20,14 @@ services:
     devices:
       - "/dev/ttyACM0:/dev/ttyACM0"
     depends_on:
-      - mqtt
+      mqtt:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 60s
     restart: unless-stopped
 
   camp_router:
@@ -22,7 +35,8 @@ services:
     environment:
       MQTT_HOST: mqtt
     depends_on:
-      - mqtt
+      mqtt:
+        condition: service_healthy
     restart: unless-stopped
 
   camp_terminal:
@@ -32,7 +46,10 @@ services:
     ports:
       - "8080:8080"
     depends_on:
-      - mqtt
+      mqtt:
+        condition: service_healthy
+      mesh_gateway:
+        condition: service_healthy
     restart: unless-stopped
 
   camp_rally:
@@ -42,7 +59,10 @@ services:
       EVENT_ID: "4632"
       SIMULATE_MODE: ${SIMULATE_MODE:-}
     depends_on:
-      - mqtt
+      mqtt:
+        condition: service_healthy
+      mesh_gateway:
+        condition: service_healthy
     restart: unless-stopped
 
   camp_weather:
@@ -50,7 +70,10 @@ services:
     environment:
       MQTT_HOST: mqtt
     depends_on:
-      - mqtt
+      mqtt:
+        condition: service_healthy
+      mesh_gateway:
+        condition: service_healthy
     restart: unless-stopped
 
   camp_grok:
@@ -59,7 +82,10 @@ services:
       MQTT_HOST: mqtt
       XAI_API_KEY: "${XAI_API_KEY:-}"
     depends_on:
-      - mqtt
+      mqtt:
+        condition: service_healthy
+      mesh_gateway:
+        condition: service_healthy
     restart: unless-stopped
 
   camp_sportity:
@@ -71,7 +97,10 @@ services:
     volumes:
       - sportity_data:/data
     depends_on:
-      - mqtt
+      mqtt:
+        condition: service_healthy
+      mesh_gateway:
+        condition: service_healthy
     restart: unless-stopped
 
   camp_announce:
@@ -81,8 +110,12 @@ services:
         echo 'Waiting for MQTT...'; sleep 2;
       done; echo 'Startup message sent'"
     depends_on:
-      - mqtt
-      - camp_router
+      mqtt:
+        condition: service_healthy
+      mesh_gateway:
+        condition: service_healthy
+      camp_router:
+        condition: service_started
     restart: "no"
 
   dozzle:

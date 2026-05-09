@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import time
+from pathlib import Path
 import paho.mqtt.client as mqtt
 from meshcore import MeshCore, EventType
 
@@ -19,8 +20,28 @@ CHANNEL_NAME = os.environ.get("CHANNEL_NAME", "#yurucamp-ft")
 MAX_CHANNELS = 40
 MAX_MSG_CHARS = 138
 CHUNK_DELAY = float(os.environ.get("CHUNK_DELAY", "5.0"))
+READY_FILE = Path(os.environ.get("READY_FILE", "/tmp/ready"))
 
 outbound_queue: asyncio.Queue = asyncio.Queue()
+mesh_ready = False
+
+
+def mark_ready():
+    try:
+        READY_FILE.touch()
+        logger.info("Ready file written at %s", READY_FILE)
+    except OSError as e:
+        logger.warning("Failed to write ready file %s: %s", READY_FILE, e)
+
+
+def mark_unready():
+    try:
+        READY_FILE.unlink()
+        logger.info("Ready file removed")
+    except FileNotFoundError:
+        pass
+    except OSError as e:
+        logger.warning("Failed to remove ready file %s: %s", READY_FILE, e)
 
 
 def split_on_spaces(text: str, max_chars: int) -> list[str]:
@@ -47,7 +68,7 @@ def split_on_spaces(text: str, max_chars: int) -> list[str]:
     return chunks
 
 
-def make_mqtt_client(loop: asyncio.AbstractEventLoop):
+def make_mqtt_client(loop: asyncio.AbstractEventLoop, subscribed_event: asyncio.Event):
     client = mqtt.Client()
 
     def on_connect(c, userdata, flags, rc):
@@ -55,11 +76,16 @@ def make_mqtt_client(loop: asyncio.AbstractEventLoop):
             logger.info("MQTT connected to %s", MQTT_HOST)
         else:
             logger.error("MQTT connect refused (rc=%d)", rc)
+            return
         c.subscribe("/yurucamp/outbound/#")
         logger.debug("Subscribed to /yurucamp/outbound/#")
+        loop.call_soon_threadsafe(subscribed_event.set)
+        if mesh_ready:
+            mark_ready()
 
     def on_disconnect(c, userdata, rc):
         logger.warning("MQTT disconnected (rc=%d)", rc)
+        mark_unready()
 
     def on_message(c, userdata, msg):
         payload = msg.payload.decode("utf-8", errors="replace")
@@ -152,8 +178,11 @@ async def outbound_worker(mc: MeshCore, channel_idx: int):
 
 
 async def main():
+    global mesh_ready
+    mark_unready()
     loop = asyncio.get_event_loop()
-    mqtt_client = make_mqtt_client(loop)
+    mqtt_subscribed = asyncio.Event()
+    mqtt_client = make_mqtt_client(loop, mqtt_subscribed)
     await connect_mqtt(mqtt_client)
 
     while True:
@@ -208,6 +237,11 @@ async def main():
 
     await mc.start_auto_message_fetching()
     logger.info("Auto message fetching started")
+
+    logger.info("Waiting for MQTT subscription to be active before signaling ready")
+    await mqtt_subscribed.wait()
+    mesh_ready = True
+    mark_ready()
 
     await outbound_worker(mc, channel_idx)
 
