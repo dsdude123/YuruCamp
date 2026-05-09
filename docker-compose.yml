@@ -62,6 +62,18 @@ services:
       - mqtt
     restart: unless-stopped
 
+  camp_sportity:
+    build: ./camp_sportity
+    environment:
+      MQTT_HOST: mqtt
+      XAI_API_KEY: "${XAI_API_KEY:-}"
+      SPORTITY_URL: "${SPORTITY_URL:-https://webapp.sportity.com/event/OTR2026/751bfffa-ae55-43db-a6cd-e6ff0d64ce2e}"
+    volumes:
+      - sportity_data:/data
+    depends_on:
+      - mqtt
+    restart: unless-stopped
+
   camp_announce:
     image: eclipse-mosquitto:2
     command: >
@@ -80,6 +92,9 @@ services:
     ports:
       - "8888:8080"
     restart: unless-stopped
+
+volumes:
+  sportity_data:
 
 configs:
   mosquitto_conf:
