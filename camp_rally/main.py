@@ -25,7 +25,7 @@ SIMULATE_START_INTERVAL = int(os.environ.get("SIMULATE_START_INTERVAL", "30"))
 SIMULATE_STOP_INTERVAL = int(os.environ.get("SIMULATE_STOP_INTERVAL", "120"))
 BASE_URL = "https://rc.statusas.com"
 
-STATUS_MAP = {0: "Completed", 2: "Expected", 3: "DNS"}
+STATUS_MAP = {0: "Completed", 1: "Running", 2: "Expected", 3: "DNS"}
 
 mqtt_client = mqtt.Client()
 prev_states: dict[tuple, str] = {}
