@@ -67,7 +67,7 @@ services:
     environment:
       MQTT_HOST: mqtt
       XAI_API_KEY: "${XAI_API_KEY:-}"
-      SPORTITY_URL: "${SPORTITY_URL:-https://webapp.sportity.com/event/OTR2026/751bfffa-ae55-43db-a6cd-e6ff0d64ce2e}"
+      SPORTITY_URL: "${SPORTITY_URL:-https://webapp.sportity.com/event/ROV2026/2565a93b-447f-403a-a1b4-374bf12e22ec}"
     volumes:
       - sportity_data:/data
     depends_on:
