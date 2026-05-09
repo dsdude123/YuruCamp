@@ -169,7 +169,7 @@ async def poll():
                 else:
                     logger.info("Processing %d live stage(s)", len(stages))
                     for stage in stages:
-                        stage_id = stage["id"]
+                        stage_id = stage.get("id") or stage["locationGroupId"]
                         stage_name = stage.get("name", str(stage_id))
                         logger.debug("Checking stage '%s' (id=%d)", stage_name, stage_id)
                         times = await fetch_stage_times(client, stage_id)
