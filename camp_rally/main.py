@@ -174,6 +174,8 @@ async def poll():
                         stage_name = stage.get("name", str(stage_id))
                         logger.debug("Checking stage '%s' (id=%d)", stage_name, stage_id)
                         times = await fetch_stage_times(client, stage_id)
+                        stage_seen = any(k[0] == stage_id for k in prev_states)
+                        new_stage_changes: list[tuple[str, str, str]] = []
                         changes = 0
                         for entry in times:
                             identifier = entry.get("identifier", "?")
@@ -182,17 +184,37 @@ async def poll():
                             status_name = STATUS_MAP.get(status_code, str(status_code))
                             key = (stage_id, identifier)
                             prev = prev_states.get(key)
-                            if prev != status_name:
-                                prev_states[key] = status_name
-                                if not first_poll:
-                                    logger.debug(
-                                        "Car %s state change: %s -> %s (stage=%s)",
-                                        identifier, prev, status_name, stage_name,
-                                    )
-                                    msg = f"Car {identifier} – {make} status changed to {status_name} on {stage_name}"
-                                    mqtt_client.publish("/yurucamp/outbound", msg)
-                                    logger.info("Published status change: %s", msg)
-                                    changes += 1
+                            if prev == status_name:
+                                continue
+                            prev_states[key] = status_name
+                            if first_poll:
+                                continue
+                            if not stage_seen:
+                                new_stage_changes.append((identifier, make, status_name))
+                                continue
+                            logger.debug(
+                                "Car %s state change: %s -> %s (stage=%s)",
+                                identifier, prev, status_name, stage_name,
+                            )
+                            msg = f"Car {identifier} – {make} status changed to {status_name} on {stage_name}"
+                            mqtt_client.publish("/yurucamp/outbound", msg)
+                            logger.info("Published status change: %s", msg)
+                            changes += 1
+                        if new_stage_changes:
+                            expected = [e for e in new_stage_changes if e[2] == "Expected"]
+                            others = [e for e in new_stage_changes if e[2] != "Expected"]
+                            if len(expected) > 1:
+                                summary = f"Stage {stage_name} is now live ({len(expected)} cars expected)"
+                                mqtt_client.publish("/yurucamp/outbound", summary)
+                                logger.info("Published stage-live summary: %s", summary)
+                                changes += 1
+                            else:
+                                others = expected + others
+                            for identifier, make, status_name in others:
+                                msg = f"Car {identifier} – {make} status changed to {status_name} on {stage_name}"
+                                mqtt_client.publish("/yurucamp/outbound", msg)
+                                logger.info("Published status change: %s", msg)
+                                changes += 1
                         if first_poll:
                             logger.info("Stage '%s': seeded %d car state(s), no publish on first start", stage_name, len(times))
                         else:
