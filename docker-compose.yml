@@ -12,6 +12,7 @@ services:
       timeout: 3s
       retries: 5
       start_period: 5s
+    restart: unless-stopped
 
   mesh_gateway:
     build: ./mesh_gateway
@@ -108,7 +109,7 @@ services:
     command: >
       sh -c "until mosquitto_pub -h mqtt -t /yurucamp/outbound -m 'YuruCamp stack online' 2>/dev/null; do
         echo 'Waiting for MQTT...'; sleep 2;
-      done; echo 'Startup message sent'"
+      done; echo 'Startup message sent'; while true; do sleep 3600; done"
     depends_on:
       mqtt:
         condition: service_healthy
@@ -116,7 +117,7 @@ services:
         condition: service_healthy
       camp_router:
         condition: service_started
-    restart: "no"
+    restart: unless-stopped
 
   dozzle:
     image: amir20/dozzle:latest
