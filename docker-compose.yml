@@ -58,7 +58,7 @@ services:
     command: ["sh", "-c", "sleep 10 && exec python main.py"]
     environment:
       MQTT_HOST: mqtt
-      EVENT_ID: "4632"
+      EVENT_ID: ${EVENT_ID:-}
       SIMULATE_MODE: ${SIMULATE_MODE:-}
     depends_on:
       mqtt:
