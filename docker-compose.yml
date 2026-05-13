@@ -18,6 +18,8 @@ services:
     build: ./mesh_gateway
     environment:
       MQTT_HOST: mqtt
+      ROOM_SERVER_PUBKEY: "${ROOM_SERVER_PUBKEY:-}"
+      ROOM_SERVER_PASSWORD: "${ROOM_SERVER_PASSWORD:-}"
     devices:
       - "/dev/ttyACM0:/dev/ttyACM0"
     depends_on:

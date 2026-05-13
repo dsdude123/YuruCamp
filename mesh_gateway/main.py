@@ -16,8 +16,8 @@ logger = logging.getLogger("mesh_gateway")
 SERIAL_PORT = os.environ.get("SERIAL_PORT", "/dev/ttyACM0")
 BAUD_RATE = int(os.environ.get("BAUD_RATE", "115200"))
 MQTT_HOST = os.environ.get("MQTT_HOST", "localhost")
-CHANNEL_NAME = os.environ.get("CHANNEL_NAME", "#yurucamp-ft")
-MAX_CHANNELS = 40
+ROOM_SERVER_PUBKEY = os.environ.get("ROOM_SERVER_PUBKEY", "").strip().lower()
+ROOM_SERVER_PASSWORD = os.environ.get("ROOM_SERVER_PASSWORD", "")
 MAX_MSG_CHARS = 138
 CHUNK_DELAY = float(os.environ.get("CHUNK_DELAY", "5.0"))
 READY_FILE = Path(os.environ.get("READY_FILE", "/tmp/ready"))
@@ -110,35 +110,25 @@ async def connect_mqtt(client: mqtt.Client):
             await asyncio.sleep(2)
 
 
-async def resolve_channel_index(mc: MeshCore, name: str) -> int:
-    target = name.lstrip("#").lower()
-    hashtag_name = "#" + target
-    first_empty = None
-    for idx in range(MAX_CHANNELS):
-        ev = await mc.commands.get_channel(idx)
-        if ev.type == EventType.ERROR:
-            break
-        ch_name = ev.payload.get("channel_name", "")
-        if ch_name and ch_name.lstrip("#").lower() == target:
-            logger.info("Found channel '%s' at index %d", hashtag_name, idx)
-            return idx
-        if first_empty is None and not ch_name:
-            first_empty = idx
-
-    if first_empty is None:
-        raise RuntimeError(
-            f"Channel '{name}' not found and no empty slot to create it"
-        )
-
-    logger.info("Channel '%s' not on device, creating at index %d", hashtag_name, first_empty)
-    ev = await mc.commands.set_channel(first_empty, hashtag_name)
+async def resolve_room_contact(mc: MeshCore, pubkey_hex: str) -> dict:
+    ev = await mc.commands.get_contacts()
     if ev.type == EventType.ERROR:
-        raise RuntimeError(f"Failed to create channel '{hashtag_name}': {ev.payload}")
-    logger.info("Channel '%s' created at index %d", hashtag_name, first_empty)
-    return first_empty
+        raise RuntimeError(f"Failed to fetch contacts: {ev.payload}")
+    contacts = ev.payload or {}
+    for name, c in contacts.items():
+        if c.get("public_key", "").lower().startswith(pubkey_hex):
+            logger.info(
+                "Found room server contact '%s' (pubkey=%s)",
+                name, c["public_key"],
+            )
+            return c
+    raise RuntimeError(
+        f"Room server with pubkey prefix {pubkey_hex} not found in contacts. "
+        "Make sure the room server has adverted and the device has imported it."
+    )
 
 
-async def outbound_worker(mc: MeshCore, channel_idx: int):
+async def outbound_worker(mc: MeshCore, room_contact: dict):
     while True:
         text = await outbound_queue.get()
         chunks = split_on_spaces(text, MAX_MSG_CHARS)
@@ -146,8 +136,9 @@ async def outbound_worker(mc: MeshCore, channel_idx: int):
             logger.debug("Outbound message empty after stripping, skipping")
             continue
         logger.info(
-            "Sending to mesh channel %d in %d chunk(s): %r",
-            channel_idx, len(chunks), text,
+            "Sending to room server %s in %d chunk(s): %r",
+            room_contact.get("adv_name", room_contact["public_key"][:12]),
+            len(chunks), text,
         )
         for i, chunk in enumerate(chunks):
             if i > 0:
@@ -157,18 +148,22 @@ async def outbound_worker(mc: MeshCore, channel_idx: int):
                 i + 1, len(chunks), len(chunk), chunk,
             )
             try:
-                result = await mc.commands.send_chan_msg(
-                    channel_idx, chunk, int(time.time())
+                result = await mc.commands.send_msg_with_retry(
+                    room_contact, chunk, int(time.time())
                 )
-                if result.type == EventType.ERROR:
+                if result is None:
                     logger.error(
-                        "send_chan_msg error on chunk %d/%d: %s",
+                        "send_msg ack timeout on chunk %d/%d", i + 1, len(chunks)
+                    )
+                elif result.type == EventType.ERROR:
+                    logger.error(
+                        "send_msg error on chunk %d/%d: %s",
                         i + 1, len(chunks), result.payload,
                     )
                 else:
                     logger.debug(
-                        "Mesh send OK for channel %d (chunk %d/%d)",
-                        channel_idx, i + 1, len(chunks),
+                        "Mesh send OK to room (chunk %d/%d)",
+                        i + 1, len(chunks),
                     )
             except Exception as e:
                 logger.error(
@@ -180,6 +175,14 @@ async def outbound_worker(mc: MeshCore, channel_idx: int):
 async def main():
     global mesh_ready
     mark_unready()
+
+    if not ROOM_SERVER_PUBKEY:
+        raise RuntimeError("ROOM_SERVER_PUBKEY must be set (hex public key of the room server)")
+    if len(ROOM_SERVER_PUBKEY) < 12 or any(c not in "0123456789abcdef" for c in ROOM_SERVER_PUBKEY):
+        raise RuntimeError(
+            f"ROOM_SERVER_PUBKEY must be a hex string (>=12 chars); got {ROOM_SERVER_PUBKEY!r}"
+        )
+
     loop = asyncio.get_event_loop()
     mqtt_subscribed = asyncio.Event()
     mqtt_client = make_mqtt_client(loop, mqtt_subscribed)
@@ -195,45 +198,33 @@ async def main():
             logger.warning("Mesh connect failed: %s, retrying in 5s...", e)
             await asyncio.sleep(5)
 
-    channel_idx = await resolve_channel_index(mc, CHANNEL_NAME)
-    logger.info("Using channel '%s' at index %d", CHANNEL_NAME, channel_idx)
+    room_contact = await resolve_room_contact(mc, ROOM_SERVER_PUBKEY)
+    room_pubkey_full = room_contact["public_key"].lower()
 
-    def on_channel_msg(event):
-        payload = event.payload
-        incoming_idx = payload.get("channel_idx")
-        text = payload.get("text", "")
-        sender = payload.get("sender_node_id", "unknown")
-        logger.debug(
-            "Channel msg received: channel_idx=%s sender=%s text=%r",
-            incoming_idx, sender, text,
-        )
-        if incoming_idx != channel_idx:
-            logger.debug(
-                "Ignoring channel msg for idx %s (watching %d)", incoming_idx, channel_idx
-            )
-            return
-        if not text:
-            logger.debug("Channel msg from %s has no text, skipping", sender)
-            return
-        logger.info("Inbound channel msg from %s: %r", sender, text)
-        result = mqtt_client.publish("/yurucamp/inbound", text)
-        logger.debug("Published to /yurucamp/inbound (mid=%s)", result.mid)
+    if ROOM_SERVER_PASSWORD:
+        logger.info("Logging in to room server...")
+        login_ev = await mc.commands.send_login_sync(room_contact, ROOM_SERVER_PASSWORD)
+        if login_ev is None:
+            logger.warning("Room server login timed out (continuing anyway)")
+        else:
+            logger.info("Room server login response: %s", login_ev.type)
 
     def on_contact_msg(event):
         payload = event.payload
         text = payload.get("text", "")
-        sender = payload.get("sender_node_id", "unknown")
+        sender = (payload.get("pubkey_prefix") or payload.get("sender_node_id") or "").lower()
         logger.debug("Contact msg received: sender=%s text=%r", sender, text)
         if not text:
-            logger.debug("Contact msg from %s has no text, skipping", sender)
             return
-        logger.info("Inbound contact msg from %s: %r", sender, text)
+        if sender and not room_pubkey_full.startswith(sender) and not sender.startswith(ROOM_SERVER_PUBKEY):
+            logger.debug("Ignoring contact msg from %s (not room server)", sender)
+            return
+        logger.info("Inbound room msg from %s: %r", sender, text)
         result = mqtt_client.publish("/yurucamp/inbound", text)
         logger.debug("Published to /yurucamp/inbound (mid=%s)", result.mid)
 
-    mc.subscribe(EventType.CHANNEL_MSG_RECV, on_channel_msg)
     mc.subscribe(EventType.CONTACT_MSG_RECV, on_contact_msg)
-    logger.info("Subscribed to CHANNEL_MSG_RECV and CONTACT_MSG_RECV events")
+    logger.info("Subscribed to CONTACT_MSG_RECV events")
 
     await mc.start_auto_message_fetching()
     logger.info("Auto message fetching started")
@@ -243,7 +234,7 @@ async def main():
     mesh_ready = True
     mark_ready()
 
-    await outbound_worker(mc, channel_idx)
+    await outbound_worker(mc, room_contact)
 
 
 if __name__ == "__main__":
