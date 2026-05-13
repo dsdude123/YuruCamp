@@ -94,6 +94,7 @@ services:
 
   camp_sportity:
     build: ./camp_sportity
+    command: ["sh", "-c", "sleep 10 && exec python main.py"]
     environment:
       MQTT_HOST: mqtt
       XAI_API_KEY: "${XAI_API_KEY:-}"
