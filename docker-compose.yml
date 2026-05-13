@@ -107,7 +107,7 @@ services:
   camp_announce:
     image: eclipse-mosquitto:2
     command: >
-      sh -c "until mosquitto_pub -h mqtt -t /yurucamp/outbound -m 'YuruCamp stack online' 2>/dev/null; do
+      sh -c "sleep 10; until mosquitto_pub -h mqtt -t /yurucamp/outbound -m 'YuruCamp stack online' 2>/dev/null; do
         echo 'Waiting for MQTT...'; sleep 2;
       done; echo 'Startup message sent'; while true; do sleep 3600; done"
     depends_on:
