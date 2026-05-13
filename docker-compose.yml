@@ -55,6 +55,7 @@ services:
 
   camp_rally:
     build: ./camp_rally
+    command: ["sh", "-c", "sleep 10 && exec python main.py"]
     environment:
       MQTT_HOST: mqtt
       EVENT_ID: "4632"
@@ -68,6 +69,7 @@ services:
 
   camp_weather:
     build: ./camp_weather
+    command: ["sh", "-c", "sleep 10 && exec python main.py"]
     environment:
       MQTT_HOST: mqtt
     depends_on:
@@ -79,6 +81,7 @@ services:
 
   camp_grok:
     build: ./camp_grok
+    command: ["sh", "-c", "sleep 10 && exec python main.py"]
     environment:
       MQTT_HOST: mqtt
       XAI_API_KEY: "${XAI_API_KEY:-}"
@@ -91,6 +94,7 @@ services:
 
   camp_sportity:
     build: ./camp_sportity
+    command: ["sh", "-c", "sleep 10 && exec python main.py"]
     environment:
       MQTT_HOST: mqtt
       XAI_API_KEY: "${XAI_API_KEY:-}"
@@ -107,7 +111,7 @@ services:
   camp_announce:
     image: eclipse-mosquitto:2
     command: >
-      sh -c "until mosquitto_pub -h mqtt -t /yurucamp/outbound -m 'YuruCamp stack online' 2>/dev/null; do
+      sh -c "sleep 5; until mosquitto_pub -h mqtt -t /yurucamp/outbound -m 'YuruCamp stack online' 2>/dev/null; do
         echo 'Waiting for MQTT...'; sleep 2;
       done; echo 'Startup message sent'; while true; do sleep 3600; done"
     depends_on:
